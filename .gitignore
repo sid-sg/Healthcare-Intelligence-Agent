@@ -1,7 +1,10 @@
-#python
+# js/ts
+node_modules/
+
+# python
 
 venv/
 
-#environment variables
+# environment variables
 
 .env
