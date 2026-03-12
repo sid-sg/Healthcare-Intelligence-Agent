@@ -118,4 +118,4 @@ Patient Bed Capacity: {capacity}
         )
     )
 
-print(documents[1].page_content)
+# print(documents[1].page_content)
