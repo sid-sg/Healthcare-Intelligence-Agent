@@ -1,4 +1,7 @@
-langchain
-langchain-community
 pathlib
 pandas
+langchain
+langchain-community
+langchain-huggingface
+sentence-transformers
+faiss-cpu
