@@ -1,0 +1,6 @@
+pathlib
+pandas
+python-dotenv
+geopy
+google-genai
+tenacity

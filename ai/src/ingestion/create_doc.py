@@ -118,5 +118,5 @@ Patient Bed Capacity: {capacity}
         )
     )
 
-# print(documents[1].page_content)
+print(documents[1].page_content)
 print(f"Number of documents created: {len(documents)}")
