@@ -1,7 +1,8 @@
-pathlib
+databricks-sql-connector
 pandas
-langchain
-langchain-community
-langchain-huggingface
-sentence-transformers
-faiss-cpu
+# pathlib
+# langchain
+# langchain-community
+# langchain-huggingface
+# sentence-transformers
+# faiss-cpu
