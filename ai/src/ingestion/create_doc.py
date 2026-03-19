@@ -110,7 +110,6 @@ Patient Bed Capacity: {capacity}
         text += f"\nMedical Equipment:\n{equipment}\n"
 
     # Metadata
-
     metadata = {
     "facility_id": clean(row.get("unique_id")),
     "name": name,

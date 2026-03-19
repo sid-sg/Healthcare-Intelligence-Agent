@@ -1,4 +1,5 @@
 databricks-sql-connector
+pyarrow
 pandas
 # pathlib
 # langchain
