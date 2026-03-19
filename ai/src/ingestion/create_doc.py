@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 # Locate the project root dynamically
 ROOT = Path(__file__).resolve().parents[3]
 
-data_path = ROOT / "data" /"Virtue-Foundation-Ghana-v0.3-Sheet1.csv"
+data_path = ROOT / "data" /"geocoded_dataset.csv"
 
 data_frame = pd.read_csv(data_path)
 
@@ -19,9 +19,9 @@ def clean(value):
     return value
 
 def clean_or_unknown(value): # for address, no. of doctors, bed capacity
-    if pd.isna(value):
+    if pd.isna(value) or str(value).strip() == "":
         return "unknown"
-    return value
+    return str(value).strip()
 
 def clean_list(value):
     if pd.isna(value):
@@ -37,17 +37,15 @@ def clean_list(value):
         try:
             parsed = json.loads(value)
             if isinstance(parsed, list):
-                if len(parsed) == 0:
-                    return ""
-                return "\n".join(f"- {item}" for item in parsed)
+                return "\n".join(f"- {item}" for item in parsed if item)
+
         except:
             return value
 
     # If it's already a list
     if isinstance(value, list):
-        if len(value) == 0:
-            return ""
-        return "\n".join(f"- {item}" for item in value)
+        return "\n".join(f"- {item}" for item in value if item)
+
 
     return str(value)
 
@@ -56,33 +54,45 @@ def clean_list(value):
 for _, row in data_frame.iterrows():
 
     # Clean and extract relevant information from each row
-    organization_type = clean(row.get('organization_type', '')) 
+
+    # Basic info
     name = clean(row.get('name', ''))
     facilityTypeId = clean(row.get('facilityTypeId', ''))
+    organization_type = clean(row.get('organization_type', '')) 
+
+    # Location info
     city = clean_or_unknown(row.get('address_city', ''))
     region = clean_or_unknown(row.get('address_stateOrRegion', ''))
     country = clean_or_unknown(row.get('address_country', ''))
+    lat = row.get("lat")
+    lon = row.get("lon")
+    osm_location = clean(row.get("osm_display_name"))
+
+    # Medical info
     description = clean(row.get('description', ''))
     specialties = clean_list(row.get('specialties', ''))
     capability = clean_list(row.get('capability', ''))
     procedure = clean_list(row.get('procedure', ''))
     equipment = clean_list(row.get('equipment', ''))
+
     number_doctors = clean_or_unknown(row.get('numberDoctors', ''))
     capacity = clean_or_unknown(row.get('capacity', ''))
 
     text = f"""
+[FACILITY]
 Organization Type: {organization_type} 
 Name: {name}
 Facility Type: {facilityTypeId}
 
-Location:
-City: {city}
-Region: {region}
-Country: {country}
+[LOCATION]
+Location: {osm_location}
 
+[RESOURCES]
 Number of Doctors: {number_doctors}
 Patient Bed Capacity: {capacity}
 """
+    if description or specialties or capability or procedure or equipment:
+        text += "\n\n[ADDITIONAL INFORMATION]"
 
     if description:
         text += f"\nDescription:\n{description}\n"
@@ -98,15 +108,22 @@ Patient Bed Capacity: {capacity}
 
     if equipment:
         text += f"\nMedical Equipment:\n{equipment}\n"
-    
+
+    # Metadata
+
     metadata = {
     "facility_id": clean(row.get("unique_id")),
     "name": name,
     "organization_type": organization_type,
     "facility_type": facilityTypeId,
+
     "city": city,
     "region": region,
     "country": country,
+    "lat": lat,
+    "lon": lon,
+    "location": osm_location,
+
     "number_doctors": number_doctors,
     "capacity": capacity
     }
