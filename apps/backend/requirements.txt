@@ -1,2 +1,5 @@
-dotenv
 fastapi
+uvicorn
+requests
+python-dotenv
+pydantic
