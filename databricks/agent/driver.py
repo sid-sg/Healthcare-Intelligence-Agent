@@ -58,6 +58,7 @@
 # MAGIC # Define your LLM endpoint and system prompt
 # MAGIC ############################################
 # MAGIC LLM_ENDPOINT_NAME = "databricks-gpt-oss-20b"
+# MAGIC # LLM_ENDPOINT_NAME = "databricks-meta-llama-3-1-8b-instruct"
 # MAGIC
 # MAGIC SYSTEM_PROMPT = """"""
 # MAGIC
@@ -87,9 +88,39 @@
 # MAGIC     udf_name = tool_name.replace("__", ".")
 # MAGIC
 # MAGIC     # Define a wrapper that accepts kwargs for the UC tool call,
+# MAGIC     
 # MAGIC     # then passes them to the UC tool execution client
+# MAGIC     # def exec_fn(**kwargs):
+# MAGIC     #     function_result = uc_function_client.execute_function(udf_name, kwargs)
+# MAGIC     #     if function_result.error is not None:
+# MAGIC     #         return function_result.error
+# MAGIC     #     else:
+# MAGIC     #         return function_result.value
+# MAGIC     # return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+# MAGIC
+# MAGIC     # def exec_fn(**kwargs):
+# MAGIC
+# MAGIC     #     coerced = {
+# MAGIC     #         k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
+# MAGIC     #         for k, v in kwargs.items()
+# MAGIC     #     }
+# MAGIC     #     function_result = uc_function_client.execute_function(udf_name, coerced)
+# MAGIC     #     if function_result.error is not None:
+# MAGIC     #         return function_result.error
+# MAGIC     #     else:
+# MAGIC     #         return function_result.value
+# MAGIC
+# MAGIC     # return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+# MAGIC
 # MAGIC     def exec_fn(**kwargs):
-# MAGIC         function_result = uc_function_client.execute_function(udf_name, kwargs)
+# MAGIC         # Remove None values (LLM sends null for optional params UC can't handle)
+# MAGIC         cleaned = {k: v for k, v in kwargs.items() if v is not None}
+# MAGIC         # Coerce int → float for UC functions that expect DOUBLE params
+# MAGIC         coerced = {
+# MAGIC             k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
+# MAGIC             for k, v in cleaned.items()
+# MAGIC         }
+# MAGIC         function_result = uc_function_client.execute_function(udf_name, coerced)
 # MAGIC         if function_result.error is not None:
 # MAGIC             return function_result.error
 # MAGIC         else:
@@ -97,11 +128,14 @@
 # MAGIC     return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
 # MAGIC
 # MAGIC
+# MAGIC
 # MAGIC TOOL_INFOS = []
 # MAGIC
 # MAGIC # You can use UDFs in Unity Catalog as agent tools
-# MAGIC # TODO: Add additional tools
-# MAGIC UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.find_facilities_near", "workspace.default.external_data", "workspace.default.find_cold_spots"]
+# MAGIC # UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.find_facilities_near", "workspace.default.external_data", "workspace.default.find_cold_spots"]
+# MAGIC
+# MAGIC UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.external_data", "workspace.default.find_cold_spots", "workspace.default.find_nearby_facilities"]
+# MAGIC
 # MAGIC
 # MAGIC uc_toolkit = UCFunctionToolkit(function_names=UC_TOOL_NAMES)
 # MAGIC uc_function_client = get_uc_function_client()
@@ -133,10 +167,23 @@
 # MAGIC         """Returns tool specifications in the format OpenAI expects."""
 # MAGIC         return [tool_info.spec for tool_info in self._tools_dict.values()]
 # MAGIC
+# MAGIC     # @mlflow.trace(span_type=SpanType.TOOL)
+# MAGIC     # def execute_tool(self, tool_name: str, args: dict) -> Any:
+# MAGIC     #     """Executes the specified tool with the given arguments."""
+# MAGIC     #     return self._tools_dict[tool_name].exec_fn(**args)
+# MAGIC     
 # MAGIC     @mlflow.trace(span_type=SpanType.TOOL)
 # MAGIC     def execute_tool(self, tool_name: str, args: dict) -> Any:
 # MAGIC         """Executes the specified tool with the given arguments."""
+# MAGIC         if tool_name not in self._tools_dict:
+# MAGIC             for registered_name in self._tools_dict:
+# MAGIC                 if tool_name.startswith(registered_name):
+# MAGIC                     tool_name = registered_name
+# MAGIC                     break
+# MAGIC             else:
+# MAGIC                 raise KeyError(f"Unknown tool: {tool_name}")
 # MAGIC         return self._tools_dict[tool_name].exec_fn(**args)
+# MAGIC
 # MAGIC
 # MAGIC     def call_llm(self, messages: list[dict[str, Any]]) -> Generator[dict[str, Any], None, None]:
 # MAGIC         with warnings.catch_warnings():
@@ -254,15 +301,8 @@ dbutils.library.restartPython()
 from agent import AGENT
 
 AGENT.predict(
-    {"input": [{"role": "user", "content": "What services does 2BN Military Hospital"}], "custom_inputs": {"session_id": "test-session-123"}},
+    {"input": [{"role": "user", "content": "How many hospitals for cardiology are within 100 km of Accra?"}], "custom_inputs": {"session_id": "test-session-123"}},
 )
-
-# COMMAND ----------
-
-for chunk in AGENT.predict_stream(
-    {"input": [{"role": "user", "content": "What services does 2BN Military Hospital"}], "custom_inputs": {"session_id": "test-session-123"}}
-):
-    print(chunk.model_dump(exclude_none=True))
 
 # COMMAND ----------
 
@@ -314,123 +354,6 @@ with mlflow.start_run():
         ],
         resources=resources,
     )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Evaluate the agent with [Agent Evaluation](https://docs.databricks.com/mlflow3/genai/eval-monitor)
-# MAGIC
-# MAGIC You can edit the requests or expected responses in your evaluation dataset and run evaluation as you iterate your agent, leveraging mlflow to track the computed quality metrics.
-# MAGIC
-# MAGIC Evaluate your agent with one of our [predefined LLM scorers](https://docs.databricks.com/mlflow3/genai/eval-monitor/predefined-judge-scorers), or try adding [custom metrics](https://docs.databricks.com/mlflow3/genai/eval-monitor/custom-scorers).
-
-# COMMAND ----------
-
-import mlflow
-from mlflow.genai.scorers import RelevanceToQuery, Safety, RetrievalRelevance, RetrievalGroundedness
-
-eval_dataset = [
-    {
-        "inputs": {
-            "input": [
-                {
-                    "role": "user",
-                    "content": "hi"
-                }
-            ]
-        },
-        "expected_response": None
-    },
-    {
-        "inputs": {
-            "input": [
-                {
-                    "role": "user",
-                    "content": "hi"
-                },
-                {
-                    "role": "assistant",
-                    "content": "Hello! 👋 How can I assist you today?"
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 50 km?"
-                }
-            ]
-        },
-        "expected_response": None
-    },
-    {
-        "inputs": {
-            "input": [
-                {
-                    "role": "user",
-                    "content": "hi"
-                },
-                {
-                    "role": "assistant",
-                    "content": "Hello! 👋 How can I assist you today?"
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 50 km?"
-                },
-                {
-                    "role": "assistant",
-                    "content": "User wants regions lacking radiology coverage within 50 km.\n\n<uc_function_call>{\"id\":\"8sPf95nLYKFesQG9GykI\",\"name\":\"workspace.default.find_cold_spots\",\"arguments\":\"{\\\"procedure_or_capability\\\":\\\"radiology\\\",\\\"coverage_radius_km\\\":50}\"}</uc_function_call>\n\n<uc_function_result>{\"id\":\"8sPf95nLYKFesQG9GykI\",\"content\":\"{\\\"is_truncated\\\":false,\\\"columns\\\":[\\\"output\\\"],\\\"rows\\\":[[\\\"{\\\\\\\"procedure\\\\\\\": \\\\\\\"radiology\\\\\\\", \\\\\\\"radius_km\\\\\\\": 50.0, \\\\\\\"cold_spots\\\\\\\": [{\\\\\\\"region\\\\\\\": \\\\\\\"Western Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Sekondi\\\\\\\", \\\\\\\"population\\\\\\\": 2060585, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Life Sciences Medical Centre\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 55.2}, {\\\\\\\"region\\\\\\\": \\\\\\\"Volta Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Ho\\\\\\\", \\\\\\\"population\\\\\\\": 1652772, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Sogakope - MDC\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 68.4}, {\\\\\\\"region\\\\\\\": \\\\\\\"Upper West Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Wa\\\\\\\", \\\\\\\"population\\\\\\\": 901502, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 196.7}, {\\\\\\\"region\\\\\\\": \\\\\\\"Oti Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Dambai\\\\\\\", \\\\\\\"population\\\\\\\": 747248, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Akatsi South Municipal Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 139.2}, {\\\\\\\"region\\\\\\\": \\\\\\\"Savannah Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Damongo\\\\\\\", \\\\\\\"population\\\\\\\": 653266, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 112.8}, {\\\\\\\"region\\\\\\\": \\\\\\\"North East Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Nalerigu\\\\\\\", \\\\\\\"population\\\\\\\": 650856, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Eastside Life Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 59.6}], \\\\\\\"num_cold_spots\\\\\\\": 6, \\\\\\\"coverage_pct\\\\\\\": 62.5, \\\\\\\"total_population_affected\\\\\\\": 6666229}\\\"]]}\"}</uc_function_result>\n\n**Cold‑spot regions (radiology ≥ 50 km away)**  \n\n| Rank | Region | Capital | Population (2021) | Nearest facility *outside* 50 km | Distance |\n|------|--------|---------|-------------------|----------------------------------|----------|\n| 1 | **Western Region** | Sekondi | 2,060,585 | Life Sciences Medical Centre | 55.2 km |\n| 2 | **Volta Region** | Ho | 1,652,772 | Sogakope – MDC | 68.4 km |\n| 3 | **Upper West Region** | Wa | 901,502 | Cape Coast Teaching Hospital | 196.7 km |\n| 4 | **Oti Region** | Dambai | 747,248 | Akatsi South Municipal Hospital | 139.2 km |\n| 5 | **Savannah Region** | Damongo | 653,266 | Cape Coast Teaching Hospital | 112.8 km |\n| 6 | **North East Region** | Nalerigu | 650,856 | Eastside Life Hospital | 59.6 km |\n\n**Key take‑aways**\n\n- 6/16 Ghanaian regions are “radiology deserts” within a 50‑km radius, covering ~6.7 million people (≈ 62 % of the country’s population).  \n- The biggest gaps are in the *Western* and *Volta* regions (≈ 3.7 million people combined) where the nearest radiology‑capable facility lies 55–70 km away.  \n- The *Upper West* region is the most distant cold spot, with the nearest facility over 190 km away.  \n\n**Implications**\n\nThese regions lack a radiology service that is reachable within the WHO‑recommended 50‑km radius for emergency and diagnostic care.  If you’re planning a mobile imaging clinic, focusing first on the Western and Volta regions would address service gaps for the largest number of people."
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 1 hour and 30 minutes of travel time?"
-                }
-            ]
-        },
-        "expected_response": None
-    },
-    {
-        "inputs": {
-            "input": [
-                {
-                    "role": "user",
-                    "content": "hi"
-                },
-                {
-                    "role": "assistant",
-                    "content": "Hello! 👋 How can I assist you today?"
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 50 km?"
-                },
-                {
-                    "role": "assistant",
-                    "content": "User wants regions lacking radiology coverage within 50 km.\n\n<uc_function_call>{\"id\":\"8sPf95nLYKFesQG9GykI\",\"name\":\"workspace.default.find_cold_spots\",\"arguments\":\"{\\\"procedure_or_capability\\\":\\\"radiology\\\",\\\"coverage_radius_km\\\":50}\"}</uc_function_call>\n\n<uc_function_result>{\"id\":\"8sPf95nLYKFesQG9GykI\",\"content\":\"{\\\"is_truncated\\\":false,\\\"columns\\\":[\\\"output\\\"],\\\"rows\\\":[[\\\"{\\\\\\\"procedure\\\\\\\": \\\\\\\"radiology\\\\\\\", \\\\\\\"radius_km\\\\\\\": 50.0, \\\\\\\"cold_spots\\\\\\\": [{\\\\\\\"region\\\\\\\": \\\\\\\"Western Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Sekondi\\\\\\\", \\\\\\\"population\\\\\\\": 2060585, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Life Sciences Medical Centre\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 55.2}, {\\\\\\\"region\\\\\\\": \\\\\\\"Volta Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Ho\\\\\\\", \\\\\\\"population\\\\\\\": 1652772, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Sogakope - MDC\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 68.4}, {\\\\\\\"region\\\\\\\": \\\\\\\"Upper West Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Wa\\\\\\\", \\\\\\\"population\\\\\\\": 901502, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 196.7}, {\\\\\\\"region\\\\\\\": \\\\\\\"Oti Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Dambai\\\\\\\", \\\\\\\"population\\\\\\\": 747248, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Akatsi South Municipal Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 139.2}, {\\\\\\\"region\\\\\\\": \\\\\\\"Savannah Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Damongo\\\\\\\", \\\\\\\"population\\\\\\\": 653266, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 112.8}, {\\\\\\\"region\\\\\\\": \\\\\\\"North East Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Nalerigu\\\\\\\", \\\\\\\"population\\\\\\\": 650856, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Eastside Life Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 59.6}], \\\\\\\"num_cold_spots\\\\\\\": 6, \\\\\\\"coverage_pct\\\\\\\": 62.5, \\\\\\\"total_population_affected\\\\\\\": 6666229}\\\"]]}\"}</uc_function_result>\n\n**Cold‑spot regions (radiology ≥ 50 km away)**  \n\n| Rank | Region | Capital | Population (2021) | Nearest facility *outside* 50 km | Distance |\n|------|--------|---------|-------------------|----------------------------------|----------|\n| 1 | **Western Region** | Sekondi | 2,060,585 | Life Sciences Medical Centre | 55.2 km |\n| 2 | **Volta Region** | Ho | 1,652,772 | Sogakope – MDC | 68.4 km |\n| 3 | **Upper West Region** | Wa | 901,502 | Cape Coast Teaching Hospital | 196.7 km |\n| 4 | **Oti Region** | Dambai | 747,248 | Akatsi South Municipal Hospital | 139.2 km |\n| 5 | **Savannah Region** | Damongo | 653,266 | Cape Coast Teaching Hospital | 112.8 km |\n| 6 | **North East Region** | Nalerigu | 650,856 | Eastside Life Hospital | 59.6 km |\n\n**Key take‑aways**\n\n- 6/16 Ghanaian regions are “radiology deserts” within a 50‑km radius, covering ~6.7 million people (≈ 62 % of the country’s population).  \n- The biggest gaps are in the *Western* and *Volta* regions (≈ 3.7 million people combined) where the nearest radiology‑capable facility lies 55–70 km away.  \n- The *Upper West* region is the most distant cold spot, with the nearest facility over 190 km away.  \n\n**Implications**\n\nThese regions lack a radiology service that is reachable within the WHO‑recommended 50‑km radius for emergency and diagnostic care.  If you’re planning a mobile imaging clinic, focusing first on the Western and Volta regions would address service gaps for the largest number of people."
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 1 hour and 30 minutes of travel time?"
-                },
-                {
-                    "role": "assistant",
-                    "content": "I'm going to use workspace.default.find_cold_spots\n\n<uc_function_call>{\"id\":\"qzEp9bfdYCvEhwVDrbOq\",\"name\":\"workspace.default.find_cold_spots\",\"arguments\":\"{\\\"procedure_or_capability\\\":\\\"radiology\\\",\\\"coverage_radius_km\\\":75}\"}</uc_function_call>\n\n<uc_function_result>{\"id\":\"qzEp9bfdYCvEhwVDrbOq\",\"content\":\"{\\\"is_truncated\\\":false,\\\"columns\\\":[\\\"output\\\"],\\\"rows\\\":[[\\\"{\\\\\\\"procedure\\\\\\\": \\\\\\\"radiology\\\\\\\", \\\\\\\"radius_km\\\\\\\": 75.0, \\\\\\\"cold_spots\\\\\\\": [{\\\\\\\"region\\\\\\\": \\\\\\\"Upper West Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Wa\\\\\\\", \\\\\\\"population\\\\\\\": 901502, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 196.7}, {\\\\\\\"region\\\\\\\": \\\\\\\"Oti Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Dambai\\\\\\\", \\\\\\\"population\\\\\\\": 747248, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Akatsi South Municipal Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 139.2}, {\\\\\\\"region\\\\\\\": \\\\\\\"Savannah Region\\\\\\\", \\\\\\\"capital\\\\\\\": \\\\\\\"Damongo\\\\\\\", \\\\\\\"population\\\\\\\": 653266, \\\\\\\"nearest_facility\\\\\\\": \\\\\\\"Cape Coast Teaching Hospital\\\\\\\", \\\\\\\"nearest_dist_km\\\\\\\": 112.8}], \\\\\\\"num_cold_spots\\\\\\\": 3, \\\\\\\"coverage_pct\\\\\\\": 81.2, \\\\\\\"total_population_affected\\\\\\\": 2302016}\\\"]]}\"}</uc_function_result>\n\n### Radiology “cold‑spot” regions that are **> 1 h 30 min (~75 km)** away from any facility  \n\n| Rank | Region | Capital | Population (2021) | Nearest radiology‑capable facility | Distance |\n|------|--------|---------|-------------------|------------------------------------|----------|\n| **1** | Upper West Region | Wa | 901,502 | Cape Coast Teaching Hospital | 196.7 km |\n| **2** | Oti Region | Dambai | 747,248 | Akatsi South Municipal Hospital | 139.2 km |\n| **3** | Savannah Region | Damongo | 653,266 | Cape Coast Teaching Hospital | 112.8 km |\n\n---\n\n#### Key points\n| Metric | Value |\n|--------|-------|\n| Number of cold‑spot regions | 3 of 16 (≈ 19 %) |\n| Total population affected | **2,302,016** people (~ 62 % of Ghana’s population) |\n| Earliest location | **Upper West Region** – the nearest radiology centre is nearly 197 km away (≈ 3 h 58 min at 50 km/h). |\n\n### Why this matters\n- **1 h 30 min travel time** (≈ 75 km at an average 50 km/h regional speed) is a common threshold for emergency or diagnostic care in Ghana.  \n- In these three regions, residents would need to travel *well beyond* the WHO‑recommended emergency window to access radiology services, creating significant inequity in timely diagnosis and treatment.  \n- Prioritizing mobile imaging units or upgrading facilities in these regions would immediately reduce the service gap for over 2.3 million people.\n\nFeel free to let me know if you’d like more detail on potential mitigation strategies or the specific facilities involved."
-                },
-                {
-                    "role": "user",
-                    "content": "Where are the largest geographic \"cold spots\" where radiology is absent within 1 hour of travel time?"
-                }
-            ]
-        },
-        "expected_response": None
-    }
-]
-
-eval_results = mlflow.genai.evaluate(
-    data=eval_dataset,
-    predict_fn=lambda input: AGENT.predict({"input": input, "custom_inputs": {"session_id": "evaluation-session"}}),
-    scorers=[RelevanceToQuery(), Safety()], # add more scorers here if they're applicable
-)
-
-# Review the evaluation results in the MLfLow UI (see console output)
 
 # COMMAND ----------
 

@@ -25,6 +25,7 @@ from unitycatalog.ai.core.base import get_uc_function_client
 # Define your LLM endpoint and system prompt
 ############################################
 LLM_ENDPOINT_NAME = "databricks-gpt-oss-20b"
+# LLM_ENDPOINT_NAME = "databricks-meta-llama-3-1-8b-instruct"
 
 SYSTEM_PROMPT = """"""
 
@@ -54,14 +55,15 @@ def create_tool_info(tool_spec, exec_fn_param: Optional[Callable] = None):
     udf_name = tool_name.replace("__", ".")
 
     # Define a wrapper that accepts kwargs for the UC tool call,
+    
     # then passes them to the UC tool execution client
-    def exec_fn(**kwargs):
-        function_result = uc_function_client.execute_function(udf_name, kwargs)
-        if function_result.error is not None:
-            return function_result.error
-        else:
-            return function_result.value
-    return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+    # def exec_fn(**kwargs):
+    #     function_result = uc_function_client.execute_function(udf_name, kwargs)
+    #     if function_result.error is not None:
+    #         return function_result.error
+    #     else:
+    #         return function_result.value
+    # return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
 
     # def exec_fn(**kwargs):
 
@@ -75,13 +77,32 @@ def create_tool_info(tool_spec, exec_fn_param: Optional[Callable] = None):
     #     else:
     #         return function_result.value
 
+    # return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+
+    def exec_fn(**kwargs):
+        # Remove None values (LLM sends null for optional params UC can't handle)
+        cleaned = {k: v for k, v in kwargs.items() if v is not None}
+        # Coerce int → float for UC functions that expect DOUBLE params
+        coerced = {
+            k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
+            for k, v in cleaned.items()
+        }
+        function_result = uc_function_client.execute_function(udf_name, coerced)
+        if function_result.error is not None:
+            return function_result.error
+        else:
+            return function_result.value
+    return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
+
 
 
 TOOL_INFOS = []
 
 # You can use UDFs in Unity Catalog as agent tools
-# TODO: Add additional tools
-UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.find_facilities_near", "workspace.default.external_data", "workspace.default.find_cold_spots"]
+# UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.find_facilities_near", "workspace.default.external_data", "workspace.default.find_cold_spots"]
+
+UC_TOOL_NAMES = ["workspace.default.rag_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.external_data", "workspace.default.find_cold_spots", "workspace.default.find_nearby_facilities"]
+
 
 uc_toolkit = UCFunctionToolkit(function_names=UC_TOOL_NAMES)
 uc_function_client = get_uc_function_client()
@@ -113,10 +134,23 @@ class ToolCallingAgent(ResponsesAgent):
         """Returns tool specifications in the format OpenAI expects."""
         return [tool_info.spec for tool_info in self._tools_dict.values()]
 
+    # @mlflow.trace(span_type=SpanType.TOOL)
+    # def execute_tool(self, tool_name: str, args: dict) -> Any:
+    #     """Executes the specified tool with the given arguments."""
+    #     return self._tools_dict[tool_name].exec_fn(**args)
+    
     @mlflow.trace(span_type=SpanType.TOOL)
     def execute_tool(self, tool_name: str, args: dict) -> Any:
         """Executes the specified tool with the given arguments."""
+        if tool_name not in self._tools_dict:
+            for registered_name in self._tools_dict:
+                if tool_name.startswith(registered_name):
+                    tool_name = registered_name
+                    break
+            else:
+                raise KeyError(f"Unknown tool: {tool_name}")
         return self._tools_dict[tool_name].exec_fn(**args)
+
 
     def call_llm(self, messages: list[dict[str, Any]]) -> Generator[dict[str, Any], None, None]:
         with warnings.catch_warnings():
