@@ -1,9 +1,0 @@
-databricks-sql-connector
-pyarrow
-pandas
-# pathlib
-# langchain
-# langchain-community
-# langchain-huggingface
-# sentence-transformers
-# faiss-cpu
