@@ -8,6 +8,7 @@ import DataAccordion from "./DataAccordion";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onShowMap?: (facilities: any[]) => void;
 }
 
 function TypingIndicator() {
@@ -20,7 +21,7 @@ function TypingIndicator() {
   );
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, onShowMap }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
@@ -98,16 +99,23 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
                   />
                 )}
 
-              {/* Mappable Facilities */}
+              {/* Mappable Facilities — "See on Map" button */}
               {!isUser &&
                 message.mappable_facilities &&
-                message.mappable_facilities.length > 0 && (
-                  <DataAccordion
-                    title="Mappable Facilities"
-                    icon={<MapPin size={14} className="text-[var(--color-warning)]" />}
-                    data={message.mappable_facilities}
-                    maxRows={10}
-                  />
+                message.mappable_facilities.length > 0 &&
+                onShowMap && (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => onShowMap(message.mappable_facilities!)}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8rem] font-medium border border-[var(--color-border)] bg-[var(--color-bg-step)] hover:bg-[var(--color-bg-hover)] hover:border-[var(--color-accent)] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] transition-all duration-200 cursor-pointer group"
+                    >
+                      <MapPin size={14} className="text-[var(--color-warning)] group-hover:text-[var(--color-accent)] transition-colors" />
+                      <span>
+                        See {message.mappable_facilities.length} facilit{message.mappable_facilities.length !== 1 ? "ies" : "y"} on map
+                      </span>
+                      <span className="text-[0.65rem] text-[var(--color-text-muted)]">→</span>
+                    </button>
+                  </div>
                 )}
             </>
           )}

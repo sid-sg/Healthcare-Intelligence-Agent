@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Activity,
   Sparkles,
@@ -11,6 +11,8 @@ import type { ChatMessage } from "./types";
 import { sendMessage } from "./api";
 import ChatInput from "./components/ChatInput";
 import MessageBubble from "./components/MessageBubble";
+import FacilitiesMap from "./components/FacilitiesMap";
+import type { Facility } from "./components/FacilitiesMap";
 import "./App.css";
 
 const EXAMPLE_QUERIES = [
@@ -44,6 +46,7 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [mapFacilities, setMapFacilities] = useState<Facility[] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -112,13 +115,28 @@ export default function App() {
     setInput(query);
   };
 
+  const handleShowMap = useCallback((facilities: any[]) => {
+    // Filter to only facilities with valid lat/lon
+    const valid = facilities.filter(
+      (f: any) => f.lat != null && f.lon != null && !isNaN(f.lat) && !isNaN(f.lon)
+    ) as Facility[];
+    if (valid.length > 0) {
+      setMapFacilities(valid);
+    }
+  }, []);
+
+  const handleCloseMap = useCallback(() => {
+    setMapFacilities(null);
+  }, []);
+
   const showWelcome = messages.length === 0;
+  const mapOpen = mapFacilities !== null && mapFacilities.length > 0;
 
   return (
     <div className="flex flex-col h-screen bg-[var(--color-bg-primary)]">
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto px-4 py-3.5 flex items-center gap-3">
+      {/* Header — full width */}
+      <header className="flex-shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md z-20">
+        <div className="px-6 py-3.5 flex items-center gap-3">
           <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--color-accent)] to-purple-500 shadow-[0_0_16px_var(--color-accent-glow)]">
             <Sparkles size={18} className="text-white" />
           </div>
@@ -139,39 +157,60 @@ export default function App() {
         </div>
       </header>
 
-      {/* Chat area */}
-      <div
-        ref={chatContainerRef}
-        className="flex-1 overflow-y-auto"
-      >
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          {showWelcome ? (
-            <WelcomeScreen onExampleClick={handleExampleClick} />
-          ) : (
-            <div className="space-y-6">
-              {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))}
+      {/* Main content — split layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chat panel */}
+        <div
+          className={`flex flex-col transition-all duration-300 ease-in-out ${
+            mapOpen ? "w-1/2 border-r border-[var(--color-border)]" : "w-full"
+          }`}
+        >
+          {/* Chat messages */}
+          <div ref={chatContainerRef} className="flex-1 overflow-y-auto">
+            <div className={`mx-auto px-4 py-6 ${mapOpen ? "max-w-2xl" : "max-w-4xl"}`}>
+              {showWelcome ? (
+                <WelcomeScreen onExampleClick={handleExampleClick} />
+              ) : (
+                <div className="space-y-6">
+                  {messages.map((msg) => (
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onShowMap={handleShowMap}
+                    />
+                  ))}
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+          </div>
 
-      {/* Input area */}
-      <div className="flex-shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <ChatInput
-            value={input}
-            onChange={setInput}
-            onSend={handleSend}
-            disabled={isLoading}
-          />
-          <p className="text-center text-[0.65rem] text-[var(--color-text-muted)] mt-2.5">
-            AI can make mistakes. Verify critical healthcare information with
-            official sources.
-          </p>
+          {/* Input area */}
+          <div className="flex-shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]/60 backdrop-blur-md">
+            <div className={`mx-auto px-4 py-4 ${mapOpen ? "max-w-2xl" : "max-w-4xl"}`}>
+              <ChatInput
+                value={input}
+                onChange={setInput}
+                onSend={handleSend}
+                disabled={isLoading}
+              />
+              <p className="text-center text-[0.65rem] text-[var(--color-text-muted)] mt-2.5">
+                AI can make mistakes. Verify critical healthcare information with
+                official sources.
+              </p>
+            </div>
+          </div>
         </div>
+
+        {/* Map panel — slides in from right */}
+        {mapOpen && (
+          <div className="w-1/2 animate-fade-in">
+            <FacilitiesMap
+              facilities={mapFacilities}
+              onClose={handleCloseMap}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
