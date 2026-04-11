@@ -55,6 +55,10 @@ def parse_structured_response(result: dict) -> dict:
     citations = []
     step_num = 1
 
+    # print("raw:", raw)
+    # print("preds:", preds)
+    # print("output_items", output_items)
+
     if not output_items:
         return {
             "answer": result.get("answer", str(raw)),
