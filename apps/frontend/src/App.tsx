@@ -84,6 +84,8 @@ export default function App() {
         content: response.answer,
         steps: response.steps,
         citations: response.citations,
+        extracted_citations: response.extracted_citations,
+        mappable_facilities: response.mappable_facilities,
         timestamp: new Date(),
       };
 

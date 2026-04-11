@@ -26,6 +26,8 @@ export interface AgentResponse {
   answer: string;
   steps: AgentStep[];
   citations: Citation[];
+  extracted_citations?: any[];
+  mappable_facilities?: any[];
 }
 
 export interface ChatMessage {
@@ -34,6 +36,9 @@ export interface ChatMessage {
   content: string;
   steps?: AgentStep[];
   citations?: Citation[];
+  extracted_citations?: any[];
+  mappable_facilities?: any[];
   timestamp: Date;
   isLoading?: boolean;
 }
+

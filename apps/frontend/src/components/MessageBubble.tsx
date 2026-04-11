@@ -1,9 +1,10 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { User, Bot } from "lucide-react";
+import { User, Bot, FileText, MapPin } from "lucide-react";
 import type { ChatMessage } from "../types";
 import StepsAccordion from "./StepsAccordion";
 import CitationsPanel from "./CitationsPanel";
+import DataAccordion from "./DataAccordion";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -78,11 +79,35 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
                 <StepsAccordion steps={message.steps} />
               )}
 
-              {/* Citations */}
+              {/* Citations block */}
               {!isUser &&
                 message.citations &&
                 message.citations.length > 0 && (
                   <CitationsPanel citations={message.citations} />
+                )}
+
+              {/* Extracted JSON Citations */}
+              {!isUser &&
+                message.extracted_citations &&
+                message.extracted_citations.length > 0 && (
+                  <DataAccordion
+                    title="Citations"
+                    icon={<FileText size={14} className="text-[var(--color-success)]" />}
+                    data={message.extracted_citations}
+                    maxRows={10}
+                  />
+                )}
+
+              {/* Mappable Facilities */}
+              {!isUser &&
+                message.mappable_facilities &&
+                message.mappable_facilities.length > 0 && (
+                  <DataAccordion
+                    title="Mappable Facilities"
+                    icon={<MapPin size={14} className="text-[var(--color-warning)]" />}
+                    data={message.mappable_facilities}
+                    maxRows={10}
+                  />
                 )}
             </>
           )}

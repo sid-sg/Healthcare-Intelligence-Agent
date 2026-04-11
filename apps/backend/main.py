@@ -181,10 +181,34 @@ def parse_structured_response(result: dict) -> dict:
     if not answer:
         answer = result.get("answer", str(raw))
 
+    import re
+    extracted_citations = []
+    mappable_facilities = []
+    
+    # Extract CITATIONS_JSON
+    citations_match = re.search(r'CITATIONS_JSON_START(.*?)CITATIONS_JSON_END', answer, re.DOTALL)
+    if citations_match:
+        try:
+            extracted_citations = json.loads(citations_match.group(1).strip())
+        except Exception:
+            pass
+        answer = re.sub(r'CITATIONS_JSON_START.*?CITATIONS_JSON_END', '', answer, flags=re.DOTALL)
+        
+    # Extract MAPPABLE_JSON
+    mappable_match = re.search(r'MAPPABLE_JSON_START(.*?)MAPPABLE_JSON_END', answer, re.DOTALL)
+    if mappable_match:
+        try:
+            mappable_facilities = json.loads(mappable_match.group(1).strip())
+        except Exception:
+            pass
+        answer = re.sub(r'MAPPABLE_JSON_START.*?MAPPABLE_JSON_END', '', answer, flags=re.DOTALL)
+
     return {
-        "answer": answer,
+        "answer": answer.strip(),
         "steps": steps,
         "citations": citations,
+        "extracted_citations": extracted_citations,
+        "mappable_facilities": mappable_facilities
     }
 
 
