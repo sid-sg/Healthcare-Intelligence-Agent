@@ -39,7 +39,7 @@ including hospitals, clinics, pharmacies, and specialty centers.
 TOOLS AVAILABLE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. vector_search(question, region)
+1. vector_search(question, location)
    USE FOR: semantic/capability questions
    - "which hospitals have ICU beds"
    - "find facilities with dialysis treatment"
@@ -90,6 +90,39 @@ TOOLS AVAILABLE
    - "where is cardiology absent within 50km"
    - "largest geographic gaps for [procedure]"
    RETURNS regions ranked by population affected (most critical first)
+
+7. analyze_anomalies(analysis_type, location, min_score)
+
+   USE WHEN:
+   - "unrealistic claims" / "inflated data" / "suspicious facilities"
+   - "things that should not move together"
+   - "imaging claims but no equipment" / "surgery claims but no support"
+   - "what correlates with what across facility types"
+   - "which capabilities are concentrated in few facilities"
+   - "data quality issues" / "facilities where data does not add up"
+   - "credibility of facility claims"
+
+   analysis_type — choose based on the question:
+   "unrealistic_claims"      → many specialties/procedures vs no capability/equipment
+   "infrastructure_mismatch" → surgical/imaging/ICU claims vs equipment available
+   "correlation"             → how characteristics move together by facility type
+   "procedure_concentration" → which capabilities are in fewest facilities
+   "all"                     → run everything (use for broad anomaly sweeps)
+
+   min_score — default 30. Use 60 for only most suspicious. Use 0 for all.
+   region    — Any location string to filter by. Pass NULL for all Ghana.
+
+   ALWAYS use this for anomaly/credibility questions.
+   DO NOT use sql_query for these — analyze_anomalies uses pre-computed columns
+   which are faster and more reliable than runtime string parsing.
+
+   AFTER calling analyze_anomalies:
+   - Report specific facility names and their flags
+   - Mention data_completeness_score alongside anomaly_score
+   - Note that doctors/capacity are mostly unknown (99%+) so scores
+     rely on specialty-capability alignment and equipment signals
+   - Suggest the Virtue Foundation verify high-scoring facilities
+
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GHANA CONTEXT
@@ -233,61 +266,70 @@ class ToolInfo(BaseModel):
     exec_fn: Callable
 
 
-def create_tool_info(tool_spec, exec_fn_param: Optional[Callable] = None):
+def create_tool_info(tool_spec, exec_fn_param=None):
     tool_spec["function"].pop("strict", None)
     tool_name = tool_spec["function"]["name"]
     udf_name = tool_name.replace("__", ".")
 
-    # Define a wrapper that accepts kwargs for the UC tool call,
-    # then passes them to the UC tool execution client
+    def get_param_type(param_info: dict) -> str:
+        """Extract the primary non-null type from a JSON schema param, including anyOf."""
+        if "type" in param_info:
+            return param_info["type"]
+        if "anyOf" in param_info:
+            for sub in param_info["anyOf"]:
+                if sub.get("type") not in ("null", None):
+                    return sub["type"]
+        return "string"
+
+    def cast_value(raw_value, param_type: str):
+        """Cast raw_value to the correct Python type for UC."""
+        if raw_value is None or raw_value == "":
+            return {"string": "", "integer": 0, "number": 0.0, "boolean": False}.get(param_type, "")
+        try:
+            if param_type == "integer":
+                return int(str(raw_value).split(".")[0])
+            elif param_type == "number":
+                return float(raw_value)
+            elif param_type == "boolean":
+                return raw_value.lower() == "true" if isinstance(raw_value, str) else bool(raw_value)
+            else:
+                return str(raw_value)
+        except (ValueError, TypeError):
+            return {"string": "", "integer": 0, "number": 0.0, "boolean": False}.get(param_type, "")
+
     def exec_fn(**kwargs):
-        # # Remove None values (LLM sends null for optional params UC can't handle)
-        # cleaned = {k: v for k, v in kwargs.items() if v is not None}
-        # # Coerce int → float for UC functions that expect DOUBLE params
-        # coerced = {
-        #     k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
-        #     for k, v in cleaned.items()
-        # }
-        # function_result = uc_function_client.execute_function(udf_name, coerced)
-
-        # 1. Get the expected parameters and their types from the tool spec
         properties = tool_spec.get("function", {}).get("parameters", {}).get("properties", {})
-        
-        # 2. Fill in missing parameters with TYPE-SAFE empty values (No 'None' allowed!)
+        cleaned_kwargs = {}
+
+        # Cast all LLM-provided values
+        for param_name, raw_value in kwargs.items():
+            param_info = properties.get(param_name, {})
+            param_type = get_param_type(param_info)
+            cleaned_kwargs[param_name] = cast_value(raw_value, param_type)
+
+        # Fill missing params with typed defaults
         for param_name, param_info in properties.items():
-            if param_name not in kwargs or kwargs[param_name] is None:
-                param_type = param_info.get("type", "string")
-                
-                if param_type == "string":
-                    kwargs[param_name] = ""     # Safe empty string
-                elif param_type in ["number", "integer"]:
-                    kwargs[param_name] = 0.0    # Safe empty number
-                elif param_type == "boolean":
-                    kwargs[param_name] = False  # Safe empty bool
-                else:
-                    kwargs[param_name] = ""     # Fallback
-                    
-        # 3. Coerce int → float for UC functions that expect DOUBLE params
-        coerced = {
-            k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
-            for k, v in kwargs.items()
-        }
-        
-        # 4. Execute the function with all parameters safely accounted for
-        function_result = uc_function_client.execute_function(udf_name, coerced)
+            if param_name not in cleaned_kwargs:
+                param_type = get_param_type(param_info)
+                cleaned_kwargs[param_name] = cast_value(None, param_type)
 
-        if function_result.error is not None:
-            return function_result.error
-        else:
-            return function_result.value
+        function_result = uc_function_client.execute_function(udf_name, cleaned_kwargs)
+        return function_result.error if function_result.error is not None else function_result.value
+
     return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
-
-
 
 TOOL_INFOS = []
 
 # You can use UDFs in Unity Catalog as agent tools
-UC_TOOL_NAMES = ["workspace.default.vector_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.external_data", "workspace.default.find_cold_spots", "workspace.default.find_nearby_facilities"]
+UC_TOOL_NAMES = [
+    "workspace.default.vector_search", 
+    "workspace.default.sql_query", 
+    "workspace.default.get_facility", 
+    "workspace.default.external_data", 
+    "workspace.default.find_cold_spots", 
+    "workspace.default.find_nearby_facilities", 
+    "workspace.default.analyze_anomalies"
+    ]
 
 
 uc_toolkit = UCFunctionToolkit(function_names=UC_TOOL_NAMES)
@@ -332,6 +374,12 @@ class ToolCallingAgent(ResponsesAgent):
                 raise KeyError(f"Unknown tool: {tool_name}")
         return self._tools_dict[tool_name].exec_fn(**args)
 
+    def _get_msg_attr(self, msg: Any, attr: str, default: Any = None) -> Any:
+        """Helper to get attribute from either dict or Pydantic object."""
+        if isinstance(msg, dict):
+            return msg.get(attr, default)
+        else:
+            return getattr(msg, attr, default)
 
     def call_llm(self, messages: list[dict[str, Any]]) -> Generator[dict[str, Any], None, None]:
         with warnings.catch_warnings():
@@ -371,9 +419,9 @@ class ToolCallingAgent(ResponsesAgent):
     ) -> Generator[ResponsesAgentStreamEvent, None, None]:
         for _ in range(max_iter):
             last_msg = messages[-1]
-            if last_msg.get("role", None) == "assistant":
+            if self._get_msg_attr(last_msg, "role") == "assistant":
                 return
-            elif last_msg.get("type", None) == "function_call":
+            elif self._get_msg_attr(last_msg, "type") == "function_call":
                 yield self.handle_tool_call(last_msg, messages)
             else:
                 yield from output_to_responses_items_stream(
@@ -420,13 +468,14 @@ class ToolCallingAgent(ResponsesAgent):
                 }
             )
 
-        messages = to_chat_completions_input([i.model_dump() for i in request.input])
-        if SYSTEM_PROMPT:
-            messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
-        yield from self.call_and_run_tools(messages=messages)
+        messages = request.input.copy()
+        messages.insert(
+            0,
+            {"role": "system", "content": SYSTEM_PROMPT},
+        )
+        yield from self.call_and_run_tools(messages)
 
 
-# Log the model using MLflow
 mlflow.openai.autolog()
 AGENT = ToolCallingAgent(llm_endpoint=LLM_ENDPOINT_NAME, tools=TOOL_INFOS)
 mlflow.models.set_model(AGENT)

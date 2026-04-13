@@ -72,7 +72,7 @@
 # MAGIC TOOLS AVAILABLE
 # MAGIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # MAGIC
-# MAGIC 1. vector_search(question, region)
+# MAGIC 1. vector_search(question, location)
 # MAGIC    USE FOR: semantic/capability questions
 # MAGIC    - "which hospitals have ICU beds"
 # MAGIC    - "find facilities with dialysis treatment"
@@ -123,6 +123,39 @@
 # MAGIC    - "where is cardiology absent within 50km"
 # MAGIC    - "largest geographic gaps for [procedure]"
 # MAGIC    RETURNS regions ranked by population affected (most critical first)
+# MAGIC
+# MAGIC 7. analyze_anomalies(analysis_type, location, min_score)
+# MAGIC
+# MAGIC    USE WHEN:
+# MAGIC    - "unrealistic claims" / "inflated data" / "suspicious facilities"
+# MAGIC    - "things that should not move together"
+# MAGIC    - "imaging claims but no equipment" / "surgery claims but no support"
+# MAGIC    - "what correlates with what across facility types"
+# MAGIC    - "which capabilities are concentrated in few facilities"
+# MAGIC    - "data quality issues" / "facilities where data does not add up"
+# MAGIC    - "credibility of facility claims"
+# MAGIC
+# MAGIC    analysis_type — choose based on the question:
+# MAGIC    "unrealistic_claims"      → many specialties/procedures vs no capability/equipment
+# MAGIC    "infrastructure_mismatch" → surgical/imaging/ICU claims vs equipment available
+# MAGIC    "correlation"             → how characteristics move together by facility type
+# MAGIC    "procedure_concentration" → which capabilities are in fewest facilities
+# MAGIC    "all"                     → run everything (use for broad anomaly sweeps)
+# MAGIC
+# MAGIC    min_score — default 30. Use 60 for only most suspicious. Use 0 for all.
+# MAGIC    region    — Any location string to filter by. Pass NULL for all Ghana.
+# MAGIC
+# MAGIC    ALWAYS use this for anomaly/credibility questions.
+# MAGIC    DO NOT use sql_query for these — analyze_anomalies uses pre-computed columns
+# MAGIC    which are faster and more reliable than runtime string parsing.
+# MAGIC
+# MAGIC    AFTER calling analyze_anomalies:
+# MAGIC    - Report specific facility names and their flags
+# MAGIC    - Mention data_completeness_score alongside anomaly_score
+# MAGIC    - Note that doctors/capacity are mostly unknown (99%+) so scores
+# MAGIC      rely on specialty-capability alignment and equipment signals
+# MAGIC    - Suggest the Virtue Foundation verify high-scoring facilities
+# MAGIC
 # MAGIC
 # MAGIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # MAGIC GHANA CONTEXT
@@ -218,7 +251,7 @@
 # MAGIC FACILITY MAPPING
 # MAGIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # MAGIC
-# MAGIC Whenever your response identifies specific facilities — whether you used vector_search, sql_query, get_facility, or find_nearby_facilities — you MUST end your response with this JSON block:
+# MAGIC Whenever your response identifies specific facilities — whether you used vector_search, sql_query, get_facility, or find_nearby_facilities, or analyze_anomalies — you MUST end your response with this JSON block:
 # MAGIC
 # MAGIC MAPPABLE_JSON_START
 # MAGIC [
@@ -266,61 +299,70 @@
 # MAGIC     exec_fn: Callable
 # MAGIC
 # MAGIC
-# MAGIC def create_tool_info(tool_spec, exec_fn_param: Optional[Callable] = None):
+# MAGIC def create_tool_info(tool_spec, exec_fn_param=None):
 # MAGIC     tool_spec["function"].pop("strict", None)
 # MAGIC     tool_name = tool_spec["function"]["name"]
 # MAGIC     udf_name = tool_name.replace("__", ".")
 # MAGIC
-# MAGIC     # Define a wrapper that accepts kwargs for the UC tool call,
-# MAGIC     # then passes them to the UC tool execution client
+# MAGIC     def get_param_type(param_info: dict) -> str:
+# MAGIC         """Extract the primary non-null type from a JSON schema param, including anyOf."""
+# MAGIC         if "type" in param_info:
+# MAGIC             return param_info["type"]
+# MAGIC         if "anyOf" in param_info:
+# MAGIC             for sub in param_info["anyOf"]:
+# MAGIC                 if sub.get("type") not in ("null", None):
+# MAGIC                     return sub["type"]
+# MAGIC         return "string"
+# MAGIC
+# MAGIC     def cast_value(raw_value, param_type: str):
+# MAGIC         """Cast raw_value to the correct Python type for UC."""
+# MAGIC         if raw_value is None or raw_value == "":
+# MAGIC             return {"string": "", "integer": 0, "number": 0.0, "boolean": False}.get(param_type, "")
+# MAGIC         try:
+# MAGIC             if param_type == "integer":
+# MAGIC                 return int(str(raw_value).split(".")[0])
+# MAGIC             elif param_type == "number":
+# MAGIC                 return float(raw_value)
+# MAGIC             elif param_type == "boolean":
+# MAGIC                 return raw_value.lower() == "true" if isinstance(raw_value, str) else bool(raw_value)
+# MAGIC             else:
+# MAGIC                 return str(raw_value)
+# MAGIC         except (ValueError, TypeError):
+# MAGIC             return {"string": "", "integer": 0, "number": 0.0, "boolean": False}.get(param_type, "")
+# MAGIC
 # MAGIC     def exec_fn(**kwargs):
-# MAGIC         # # Remove None values (LLM sends null for optional params UC can't handle)
-# MAGIC         # cleaned = {k: v for k, v in kwargs.items() if v is not None}
-# MAGIC         # # Coerce int → float for UC functions that expect DOUBLE params
-# MAGIC         # coerced = {
-# MAGIC         #     k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
-# MAGIC         #     for k, v in cleaned.items()
-# MAGIC         # }
-# MAGIC         # function_result = uc_function_client.execute_function(udf_name, coerced)
-# MAGIC
-# MAGIC         # 1. Get the expected parameters and their types from the tool spec
 # MAGIC         properties = tool_spec.get("function", {}).get("parameters", {}).get("properties", {})
-# MAGIC         
-# MAGIC         # 2. Fill in missing parameters with TYPE-SAFE empty values (No 'None' allowed!)
+# MAGIC         cleaned_kwargs = {}
+# MAGIC
+# MAGIC         # Cast all LLM-provided values
+# MAGIC         for param_name, raw_value in kwargs.items():
+# MAGIC             param_info = properties.get(param_name, {})
+# MAGIC             param_type = get_param_type(param_info)
+# MAGIC             cleaned_kwargs[param_name] = cast_value(raw_value, param_type)
+# MAGIC
+# MAGIC         # Fill missing params with typed defaults
 # MAGIC         for param_name, param_info in properties.items():
-# MAGIC             if param_name not in kwargs or kwargs[param_name] is None:
-# MAGIC                 param_type = param_info.get("type", "string")
-# MAGIC                 
-# MAGIC                 if param_type == "string":
-# MAGIC                     kwargs[param_name] = ""     # Safe empty string
-# MAGIC                 elif param_type in ["number", "integer"]:
-# MAGIC                     kwargs[param_name] = 0.0    # Safe empty number
-# MAGIC                 elif param_type == "boolean":
-# MAGIC                     kwargs[param_name] = False  # Safe empty bool
-# MAGIC                 else:
-# MAGIC                     kwargs[param_name] = ""     # Fallback
-# MAGIC                     
-# MAGIC         # 3. Coerce int → float for UC functions that expect DOUBLE params
-# MAGIC         coerced = {
-# MAGIC             k: float(v) if isinstance(v, int) and not isinstance(v, bool) else v
-# MAGIC             for k, v in kwargs.items()
-# MAGIC         }
-# MAGIC         
-# MAGIC         # 4. Execute the function with all parameters safely accounted for
-# MAGIC         function_result = uc_function_client.execute_function(udf_name, coerced)
+# MAGIC             if param_name not in cleaned_kwargs:
+# MAGIC                 param_type = get_param_type(param_info)
+# MAGIC                 cleaned_kwargs[param_name] = cast_value(None, param_type)
 # MAGIC
-# MAGIC         if function_result.error is not None:
-# MAGIC             return function_result.error
-# MAGIC         else:
-# MAGIC             return function_result.value
+# MAGIC         function_result = uc_function_client.execute_function(udf_name, cleaned_kwargs)
+# MAGIC         return function_result.error if function_result.error is not None else function_result.value
+# MAGIC
 # MAGIC     return ToolInfo(name=tool_name, spec=tool_spec, exec_fn=exec_fn_param or exec_fn)
-# MAGIC
-# MAGIC
 # MAGIC
 # MAGIC TOOL_INFOS = []
 # MAGIC
 # MAGIC # You can use UDFs in Unity Catalog as agent tools
-# MAGIC UC_TOOL_NAMES = ["workspace.default.vector_search", "workspace.default.sql_query", "workspace.default.get_facility", "workspace.default.external_data", "workspace.default.find_cold_spots", "workspace.default.find_nearby_facilities"]
+# MAGIC UC_TOOL_NAMES = [
+# MAGIC     "workspace.default.vector_search", 
+# MAGIC     "workspace.default.sql_query", 
+# MAGIC     "workspace.default.get_facility", 
+# MAGIC     "workspace.default.external_data", 
+# MAGIC     "workspace.default.find_cold_spots", 
+# MAGIC     "workspace.default.find_nearby_facilities", 
+# MAGIC     "workspace.default.analyze_anomalies"
+# MAGIC     ]
 # MAGIC
 # MAGIC
 # MAGIC uc_toolkit = UCFunctionToolkit(function_names=UC_TOOL_NAMES)
@@ -365,6 +407,12 @@
 # MAGIC                 raise KeyError(f"Unknown tool: {tool_name}")
 # MAGIC         return self._tools_dict[tool_name].exec_fn(**args)
 # MAGIC
+# MAGIC     def _get_msg_attr(self, msg: Any, attr: str, default: Any = None) -> Any:
+# MAGIC         """Helper to get attribute from either dict or Pydantic object."""
+# MAGIC         if isinstance(msg, dict):
+# MAGIC             return msg.get(attr, default)
+# MAGIC         else:
+# MAGIC             return getattr(msg, attr, default)
 # MAGIC
 # MAGIC     def call_llm(self, messages: list[dict[str, Any]]) -> Generator[dict[str, Any], None, None]:
 # MAGIC         with warnings.catch_warnings():
@@ -404,9 +452,9 @@
 # MAGIC     ) -> Generator[ResponsesAgentStreamEvent, None, None]:
 # MAGIC         for _ in range(max_iter):
 # MAGIC             last_msg = messages[-1]
-# MAGIC             if last_msg.get("role", None) == "assistant":
+# MAGIC             if self._get_msg_attr(last_msg, "role") == "assistant":
 # MAGIC                 return
-# MAGIC             elif last_msg.get("type", None) == "function_call":
+# MAGIC             elif self._get_msg_attr(last_msg, "type") == "function_call":
 # MAGIC                 yield self.handle_tool_call(last_msg, messages)
 # MAGIC             else:
 # MAGIC                 yield from output_to_responses_items_stream(
@@ -453,13 +501,14 @@
 # MAGIC                 }
 # MAGIC             )
 # MAGIC
-# MAGIC         messages = to_chat_completions_input([i.model_dump() for i in request.input])
-# MAGIC         if SYSTEM_PROMPT:
-# MAGIC             messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
-# MAGIC         yield from self.call_and_run_tools(messages=messages)
+# MAGIC         messages = request.input.copy()
+# MAGIC         messages.insert(
+# MAGIC             0,
+# MAGIC             {"role": "system", "content": SYSTEM_PROMPT},
+# MAGIC         )
+# MAGIC         yield from self.call_and_run_tools(messages)
 # MAGIC
 # MAGIC
-# MAGIC # Log the model using MLflow
 # MAGIC mlflow.openai.autolog()
 # MAGIC AGENT = ToolCallingAgent(llm_endpoint=LLM_ENDPOINT_NAME, tools=TOOL_INFOS)
 # MAGIC mlflow.models.set_model(AGENT)
@@ -482,7 +531,7 @@ dbutils.library.restartPython()
 from agent import AGENT
 
 AGENT.predict(
-    {"input": [{"role": "user", "content": "Any facility in Kasoa for cardiology?"}], "custom_inputs": {"session_id": "test-session-123"}},
+    {"input": [{"role": "user", "content": "hi"}], "custom_inputs": {"session_id": "test-session-123"}},
 )
 
 # COMMAND ----------
