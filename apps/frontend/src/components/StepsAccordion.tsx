@@ -68,7 +68,7 @@ function StepContent({ step }: { step: AgentStep }) {
 
   // Generic JSON content
   return (
-    <pre className="rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border)] p-3 text-[0.8rem] overflow-x-auto text-[var(--color-text-secondary)]">
+    <pre className="rounded-lg bg-[var(--color-bg-primary)] border border-[var(--color-border)] p-3 text-[0.8rem] overflow-x-auto overflow-y-auto max-h-[400px] text-[var(--color-text-secondary)] custom-scrollbar">
       <code>{JSON.stringify(content, null, 2)}</code>
     </pre>
   );
