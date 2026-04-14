@@ -22,7 +22,7 @@ We built an **AI agent** that understands natural language, queries structured d
 
 | Feature | Description |
 |---|---|
-| 🤖 **Multi-tool AI Agent** | Llama 3.3 70B agent with 6 specialized tools (SQL, Vector Search, Geospatial, etc.) |
+| 🤖 **Multi-tool AI Agent** | Llama 3.3 70B agent with 7 specialized tools (SQL, Vector Search, Geospatial, etc.) |
 | 🗺️ **Interactive Facility Map** | MapLibre GL-powered dark map with clickable markers, auto-fit bounds, and jittered overlapping pins |
 | 📊 **Tabular SQL Results** | Query results rendered in scrollable data tables directly in the chat |
 | 🔍 **RAG + Text-to-SQL** | Hybrid retrieval — semantic search for capability questions, SQL for structured queries |

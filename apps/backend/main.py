@@ -306,6 +306,9 @@ def chat_with_agent(question: str, session_id: str) -> dict:
         "raw_data": data
     }
 
+@app.get("/")
+def read_root():
+    return {"status": "healthy"}
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -317,12 +320,3 @@ async def chat_endpoint(request: ChatRequest):
     structured = parse_structured_response(result)
 
     return structured
-
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "ok",
-        "endpoint_configured": AGENT_ENDPOINT is not None,
-        "token_configured": DATABRICKS_TOKEN is not None
-    }
