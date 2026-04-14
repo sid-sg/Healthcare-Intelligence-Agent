@@ -126,35 +126,65 @@
 # MAGIC
 # MAGIC 7. analyze_anomalies(analysis_type, location, min_score)
 # MAGIC
-# MAGIC    USE WHEN:
-# MAGIC    - "unrealistic claims" / "inflated data" / "suspicious facilities"
-# MAGIC    - "things that should not move together"
-# MAGIC    - "imaging claims but no equipment" / "surgery claims but no support"
-# MAGIC    - "what correlates with what across facility types"
-# MAGIC    - "which capabilities are concentrated in few facilities"
-# MAGIC    - "data quality issues" / "facilities where data does not add up"
-# MAGIC    - "credibility of facility claims"
+# MAGIC    USE WHEN: anomaly detection, data credibility, suspicious facilities,
+# MAGIC              things that don't add up, correlated features that don't match
 # MAGIC
-# MAGIC    analysis_type — choose based on the question:
-# MAGIC    "unrealistic_claims"      → many specialties/procedures vs no capability/equipment
-# MAGIC    "infrastructure_mismatch" → surgical/imaging/ICU claims vs equipment available
-# MAGIC    "correlation"             → how characteristics move together by facility type
-# MAGIC    "procedure_concentration" → which capabilities are in fewest facilities
-# MAGIC    "all"                     → run everything (use for broad anomaly sweeps)
+# MAGIC    CRITICAL — choose the right analysis_type:
 # MAGIC
-# MAGIC    min_score — default 30. Use 60 for only most suspicious. Use 0 for all.
-# MAGIC    region    — Any location string to filter by. Pass NULL for all Ghana.
+# MAGIC    "unrealistic_claims"
+# MAGIC    → USE FOR: "facilities claiming too many procedures relative to size"
+# MAGIC               "high breadth of procedures with minimal infrastructure"
+# MAGIC               "inflated claims"
+# MAGIC    → RETURNS: list of specific facilities with flags
 # MAGIC
-# MAGIC    ALWAYS use this for anomaly/credibility questions.
-# MAGIC    DO NOT use sql_query for these — analyze_anomalies uses pre-computed columns
-# MAGIC    which are faster and more reliable than runtime string parsing.
+# MAGIC    "infrastructure_mismatch"
+# MAGIC    → USE FOR: "surgery claims but no equipment"
+# MAGIC               "imaging claims but no equipment"
+# MAGIC               "ICU claims without support"
+# MAGIC               "high-stakes claims with no supporting signals"
+# MAGIC    → RETURNS: list of specific facilities with flags
 # MAGIC
-# MAGIC    AFTER calling analyze_anomalies:
-# MAGIC    - Report specific facility names and their flags
-# MAGIC    - Mention data_completeness_score alongside anomaly_score
-# MAGIC    - Note that doctors/capacity are mostly unknown (99%+) so scores
-# MAGIC      rely on specialty-capability alignment and equipment signals
-# MAGIC    - Suggest the Virtue Foundation verify high-scoring facilities
+# MAGIC    "pattern_mismatch"
+# MAGIC    → USE FOR: "things that shouldn't move together"
+# MAGIC               "abnormal patterns where correlated features don't match"
+# MAGIC               "facilities where expected correlations break down"
+# MAGIC               "highly specialized claims with no supporting signals"
+# MAGIC               "specialty breadth without clinical evidence"
+# MAGIC    → RETURNS: list of specific facilities with named patterns
+# MAGIC               e.g. "Imaging claim without equipment", 
+# MAGIC                    "Specialty-capability misalignment"
+# MAGIC    → USE THIS instead of "correlation" when user wants SPECIFIC FACILITIES
+# MAGIC
+# MAGIC    "correlation"
+# MAGIC    → USE FOR: "what characteristics move together across facility types"
+# MAGIC               "which facility type has the biggest gaps on average"
+# MAGIC               "systemic patterns by category"
+# MAGIC    → RETURNS: aggregate statistics by facility type — NOT individual facilities
+# MAGIC    → DO NOT use this when user wants a list of specific facilities
+# MAGIC
+# MAGIC    "procedure_concentration"
+# MAGIC    → USE FOR: "which procedures depend on very few facilities"
+# MAGIC               "how concentrated is surgical/ICU/imaging capability"
+# MAGIC               "scarcity of high-complexity procedures"
+# MAGIC    → RETURNS: count of facilities claiming each capability + how many have no equipment
+# MAGIC
+# MAGIC    "all"
+# MAGIC    → USE FOR: broad sweep, "find all anomalies", "full analysis"
+# MAGIC    → RETURNS: all five analyses combined
+# MAGIC
+# MAGIC    ROUTING GUIDE:
+# MAGIC    "list of suspicious facilities"          → unrealistic_claims or infrastructure_mismatch
+# MAGIC    "things that shouldn't move together"    → pattern_mismatch
+# MAGIC    "abnormal correlation patterns"          → pattern_mismatch
+# MAGIC    "what moves together by facility type"   → correlation
+# MAGIC    "how concentrated is X procedure"        → procedure_concentration
+# MAGIC
+# MAGIC    AFTER calling analyze_anomalies with pattern_mismatch or unrealistic_claims:
+# MAGIC    - List specific facility names from the result
+# MAGIC    - State each facility's primary pattern in plain English
+# MAGIC    - Mention anomaly_score and completeness_score for context
+# MAGIC    - Note that scores rely on specialty/capability/equipment signals
+# MAGIC      since doctors and capacity are unknown for 99%+ of facilities
 # MAGIC
 # MAGIC
 # MAGIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -531,7 +561,7 @@ dbutils.library.restartPython()
 from agent import AGENT
 
 AGENT.predict(
-    {"input": [{"role": "user", "content": "hi"}], "custom_inputs": {"session_id": "test-session-123"}},
+    {"input": [{"role": "user", "content": "Which facilities claim an unrealistic number of procedures relative to their size?"}], "custom_inputs": {"session_id": "test-session-123"}},
 )
 
 # COMMAND ----------
