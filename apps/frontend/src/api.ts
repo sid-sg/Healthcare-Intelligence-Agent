@@ -4,12 +4,14 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function sendMessage(
   message: string,
-  sessionId: string = "frontend-user-session"
+  sessionId: string = "frontend-user-session",
+  signal?: AbortSignal
 ): Promise<AgentResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, session_id: sessionId }),
+    signal,
   });
 
   if (!response.ok) {

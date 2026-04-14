@@ -49,6 +49,7 @@ export default function App() {
   const [mapFacilities, setMapFacilities] = useState<Facility[] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -78,8 +79,12 @@ export default function App() {
     setInput("");
     setIsLoading(true);
 
+    // Create a new AbortController for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await sendMessage(trimmed);
+      const response = await sendMessage(trimmed, "frontend-user-session", controller.signal);
 
       const agentMsg: ChatMessage = {
         id: loadingMsg.id,
@@ -96,20 +101,39 @@ export default function App() {
         prev.map((m) => (m.id === loadingMsg.id ? agentMsg : m))
       );
     } catch (error) {
-      const errorMsg: ChatMessage = {
-        id: loadingMsg.id,
-        role: "agent",
-        content: `Sorry, something went wrong. ${error instanceof Error ? error.message : "Please try again."}`,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) =>
-        prev.map((m) => (m.id === loadingMsg.id ? errorMsg : m))
-      );
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User cancelled — replace loading bubble with a notice
+        const cancelledMsg: ChatMessage = {
+          id: loadingMsg.id,
+          role: "agent",
+          content: "*Response was stopped.*",
+          timestamp: new Date(),
+        };
+        setMessages((prev) =>
+          prev.map((m) => (m.id === loadingMsg.id ? cancelledMsg : m))
+        );
+      } else {
+        const errorMsg: ChatMessage = {
+          id: loadingMsg.id,
+          role: "agent",
+          content: `Sorry, something went wrong. ${error instanceof Error ? error.message : "Please try again."}`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) =>
+          prev.map((m) => (m.id === loadingMsg.id ? errorMsg : m))
+        );
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   };
+
+  const handleStop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  }, []);
 
   const handleExampleClick = (query: string) => {
     setInput(query);
@@ -142,7 +166,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-[0.95rem] font-semibold text-[var(--color-text-primary)] leading-tight">
-              Ghana Healthcare Agent
+              Healthcare Agent
             </h1>
             <p className="text-[0.7rem] text-[var(--color-text-muted)]">
               Powered by Databricks AI
@@ -161,9 +185,8 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Chat panel */}
         <div
-          className={`flex flex-col transition-all duration-300 ease-in-out ${
-            mapOpen ? "w-1/2 border-r border-[var(--color-border)]" : "w-full"
-          }`}
+          className={`flex flex-col transition-all duration-300 ease-in-out ${mapOpen ? "w-1/2 border-r border-[var(--color-border)]" : "w-full"
+            }`}
         >
           {/* Chat messages */}
           <div ref={chatContainerRef} className="flex-1 overflow-y-auto">
@@ -192,7 +215,8 @@ export default function App() {
                 value={input}
                 onChange={setInput}
                 onSend={handleSend}
-                disabled={isLoading}
+                isLoading={isLoading}
+                onStop={handleStop}
               />
               <p className="text-center text-[0.65rem] text-[var(--color-text-muted)] mt-2.5">
                 AI can make mistakes. Verify critical healthcare information with
