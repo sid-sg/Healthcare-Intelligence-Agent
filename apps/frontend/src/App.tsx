@@ -29,7 +29,7 @@ const EXAMPLE_QUERIES = [
   {
     text: "Which facilities claim to offer neurosurgery but lack the basic equipment required to perform it?",
     icon: <Stethoscope size={15} />,
-  },
+  }
 ];
 
 function generateId() {
