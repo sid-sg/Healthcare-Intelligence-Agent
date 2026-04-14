@@ -17,24 +17,20 @@ import "./App.css";
 
 const EXAMPLE_QUERIES = [
   {
-    text: "What services does 2BN Military Hospital offer?",
+    text: "How many hospitals in Accra have the ability to perform dentistry?",
     icon: <Building2 size={15} />,
   },
   {
-    text: "Which hospitals have emergency care?",
+    text: "Which hospitals in Accra have cardiology?",
+    icon: <Building2 size={15} />,
+  },
+  {
+    text: "How many hospitals for cardiology are within 100 km of Accra?",
     icon: <HeartPulse size={15} />,
   },
   {
-    text: "How many hospitals have cardiology?",
-    icon: <Activity size={15} />,
-  },
-  {
-    text: "Find facilities with maternity services",
+    text: "Which facilities claim to offer neurosurgery but lack the basic equipment required to perform it?",
     icon: <Stethoscope size={15} />,
-  },
-  {
-    text: "List all hospitals in the Greater Accra region",
-    icon: <MapPin size={15} />,
   },
 ];
 
@@ -172,12 +168,6 @@ export default function App() {
               Powered by Databricks
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[var(--color-success)] animate-pulse" />
-            <span className="text-[0.7rem] text-[var(--color-success)]">
-              Online
-            </span>
-          </div>
         </div>
       </header>
 
@@ -254,7 +244,7 @@ function WelcomeScreen({
         <Sparkles size={28} className="text-white" />
       </div>
       <h2 className="text-2xl font-bold gradient-text mb-2">
-        Ghana Healthcare Agent
+        Healthcare Intelligence Agent
       </h2>
       <p className="text-[var(--color-text-secondary)] text-[0.9rem] mb-10 text-center max-w-md">
         Ask me about healthcare facilities across Ghana — services, locations,
