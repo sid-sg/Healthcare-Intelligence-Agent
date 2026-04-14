@@ -169,7 +169,7 @@ export default function App() {
               Healthcare Agent
             </h1>
             <p className="text-[0.7rem] text-[var(--color-text-muted)]">
-              Powered by Databricks AI
+              Powered by Databricks
             </p>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
