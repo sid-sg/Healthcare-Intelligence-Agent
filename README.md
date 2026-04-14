@@ -22,13 +22,14 @@ We built an **AI agent** that understands natural language, queries structured d
 
 | Feature | Description |
 |---|---|
-| 🤖 **Multi-tool AI Agent** | Llama 3.3 70B agent with 7 specialized tools (SQL, Vector Search, Geospatial, etc.) |
+| 🤖 **Multi-tool AI Agent** | Llama 3.3 70B agent with 7 specialized tools (SQL, Vector Search, Geospatial, Anomaly Detection, etc.) |
 | 🗺️ **Interactive Facility Map** | MapLibre GL-powered dark map with clickable markers, auto-fit bounds, and jittered overlapping pins |
 | 📊 **Tabular SQL Results** | Query results rendered in scrollable data tables directly in the chat |
 | 🔍 **RAG + Text-to-SQL** | Hybrid retrieval — semantic search for capability questions, SQL for structured queries |
 | 🌍 **Geospatial Analysis** | Find nearby facilities, detect healthcare cold spots, proximity-based filtering |
+| 🚨 **Anomaly Detection** | Pre-computed suspicion scores flagging facilities with mismatched claims vs infrastructure |
 | 📈 **WHO Benchmarks** | Built-in population data and WHO standards for per-capita healthcare analysis |
-
+| 📍 **Flexible Location Filtering** | Matches any location string (neighbourhood, city, district, region) against OSM display names |
 ---
 
 ## 🏗️ Architecture
@@ -69,6 +70,14 @@ We built an **AI agent** that understands natural language, queries structured d
 │  │  ├── find_nearby      → Proximity / radius search           │ │
 │  │  └── find_cold_spots  → Healthcare desert analysis          │ │
 │  │  └── analyze_anomalies  → anomalies & correlation detection │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  Databricks Data Layer                                      │ │
+│  │  • Delta Tables: facilities3 (enriched), facility_documents │ │
+│  │  • Vector Search Index: facility_documents_index            │ │
+│  │  • Genie Space: Text-to-SQL over facilities3                │ │
+│  │  • SQL Warehouse: direct query execution for tools          │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                        Databricks Workspace                      │
 └──────────────────────────────────────────────────────────────────┘
@@ -239,11 +248,13 @@ Open **http://localhost:5173** in your browser.
 |----------|---------|
 | **Counting** | *How many hospitals offer cardiology in Ghana?* |
 | **Geospatial** | *Which hospitals for emergency care are within 100km of Accra?* |
-| **Capability Search** | *Which facilities have ICU beds and ventilators?* |
-| **Comparison** | *Compare healthcare coverage in Upper East vs Greater Accra* |
+| **Capability Search** | *Which facilities in Dansoman have heart treatment?* |
 | **Cold Spots** | *Where are the largest gaps for surgical care within 50km?* |
+| **Anomaly Detection** | *Which facilities claim imaging capability but list no equipment?* |
+| **Pattern Mismatch** | *Which facilities show things that shouldn't move together?* |
 | **Facility Lookup** | *What services does 2BN Military Hospital offer?* |
 | **WHO Analysis** | *Which regions need the most hospitals per WHO standards?* |
+| **Workforce** | *Where is the cardiology workforce actually practicing in Ghana?* |
 
 ---
 
@@ -252,10 +263,22 @@ Open **http://localhost:5173** in your browser.
 | Layer | Technology |
 |-------|------------|
 | **LLM** | Llama 3.3 70B Instruct (Databricks Model Serving) |
-| **Agent Framework** | OpenAI Agents SDK |
+| **Agent Framework** | MLflow ResponsesAgent + OpenAI Agents SDK |
 | **Data Platform** | Databricks Unity Catalog, Delta Lake |
-| **Agent Tools** | Unity Catalog Functions |
+| **Vector Search** | Databricks Vector Search (REST API, no SDK dependency) |
+| **Text-to-SQL** | Databricks Genie + SQL Warehouse direct execution |
+| **Agent Tools** | Unity Catalog Python Functions |
 | **Backend** | FastAPI (Python) |
 | **Frontend** | React 19, Vite, TypeScript, TailwindCSS v4 |
 | **Map** | MapLibre GL JS + react-map-gl |
 | **Geocoding** | OpenStreetMap Nominatim + Gemini LLM |
+
+
+---
+
+## ⚠️ Known Limitations
+
+- `numberDoctors` and `capacity` are unknown for 99%+ of facilities — anomaly scores rely on specialty/capability/equipment signals only
+- `capability` column contained significant web-scraped noise (LinkedIn profiles, directory listings) — cleaned via medical whitelist/blacklist filter, reducing populated rows from 82% to 51% but with genuine medical content
+- Cold spot analysis uses regional capitals as population center proxies — rural areas within a region are not individually checked
+- Vector Search location filtering is a post-retrieval substring match — very specific location names that don't appear in `osm_display_name` may return no results
