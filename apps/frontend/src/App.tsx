@@ -166,7 +166,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-[0.95rem] font-semibold text-[var(--color-text-primary)] leading-tight">
-              Healthcare Agent
+              Healthcare Intelligence Agent
             </h1>
             <p className="text-[0.7rem] text-[var(--color-text-muted)]">
               Powered by Databricks
