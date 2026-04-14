@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Activity,
   Sparkles,
   Stethoscope,
   Building2,
-  MapPin,
   HeartPulse,
 } from "lucide-react";
 import type { ChatMessage } from "./types";
@@ -22,11 +20,11 @@ const EXAMPLE_QUERIES = [
   },
   {
     text: "Which hospitals in Accra have cardiology?",
-    icon: <Building2 size={15} />,
+    icon: <HeartPulse size={15} />,
   },
   {
     text: "How many hospitals for cardiology are within 100 km of Accra?",
-    icon: <HeartPulse size={15} />,
+    icon: <Building2 size={15} />,
   },
   {
     text: "Which facilities claim to offer neurosurgery but lack the basic equipment required to perform it?",
