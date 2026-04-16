@@ -121,17 +121,6 @@ export default function MessageBubble({ message, onShowMap }: MessageBubbleProps
           )}
         </div>
 
-        {/* Timestamp */}
-        <p
-          className={`text-[0.65rem] text-[var(--color-text-muted)] mt-1 ${
-            isUser ? "text-right" : ""
-          }`}
-        >
-          {message.timestamp.toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
       </div>
     </div>
   );
