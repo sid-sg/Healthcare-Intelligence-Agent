@@ -58,7 +58,7 @@ We built an **AI agent** that understands natural language, queries structured d
 ┌──────────────────────────┼───────────────────────────────────────┐
 │  ┌───────────────────────▼─────────────────────────────────────┐ │
 │  │  Databricks AI Agent  (databricks/agent)                    │ │
-│  │  • Llama 3.3 70B on Model Serving                           │ │
+│  │  • GPT OSS 120B on Model Serving                            │ │
 │  │  • MLflow ResponsesAgent with tool-calling loop             │ │
 │  │  • Unity Catalog Functions as tools                         │ │
 │  │                                                             │ │
