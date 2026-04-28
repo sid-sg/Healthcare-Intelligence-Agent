@@ -262,7 +262,7 @@ Open **http://localhost:5173** in your browser.
 
 | Layer | Technology |
 |-------|------------|
-| **LLM** | Llama 3.3 70B Instruct (Databricks Model Serving) |
+| **LLM** | GPT OSS 120B (Databricks Model Serving) |
 | **Agent Framework** | MLflow ResponsesAgent + OpenAI Agents SDK |
 | **Data Platform** | Databricks Unity Catalog, Delta Lake |
 | **Vector Search** | Databricks Vector Search (REST API, no SDK dependency) |
