@@ -1,6 +1,6 @@
 # 🏥 Healthcare Intelligence Agent
 
-> **An AI-powered healthcare facility intelligence platform for Ghana** — built on Databricks, powered by Llama 3.3 70B, and designed to help NGO planners, healthcare coordinators, and researchers improve healthcare access across the country.
+> **An AI-powered healthcare facility intelligence platform for Ghana** — built on Databricks, powered by GPT OSS 120B, and designed to help NGO planners, healthcare coordinators, and researchers improve healthcare access across the country.
 
 Built for the **Databricks × Accenture Hackathon**.
 
@@ -22,7 +22,7 @@ We built an **AI agent** that understands natural language, queries structured d
 
 | Feature | Description |
 |---|---|
-| 🤖 **Multi-tool AI Agent** | Llama 3.3 70B agent with 7 specialized tools (SQL, Vector Search, Geospatial, Anomaly Detection, etc.) |
+| 🤖 **Multi-tool AI Agent** | GPT OSS 120B agent with 7 specialized tools (SQL, Vector Search, Geospatial, Anomaly Detection, etc.) |
 | 🗺️ **Interactive Facility Map** | MapLibre GL-powered dark map with clickable markers, auto-fit bounds, and jittered overlapping pins |
 | 📊 **Tabular SQL Results** | Query results rendered in scrollable data tables directly in the chat |
 | 🔍 **RAG + Text-to-SQL** | Hybrid retrieval — semantic search for capability questions, SQL for structured queries |
